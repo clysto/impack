@@ -83,6 +83,7 @@ pub fn ImpackDecoder(comptime Reader: type) type {
         width: u16 = 0,
         height: u16 = 0,
         reader: std.io.BitReader(.big, Reader),
+        prev_dc: i32 = 0,
         quality: Quality = .best,
 
         pub fn readDCHuffCode(self: *@This()) !u5 {
@@ -150,9 +151,10 @@ pub fn ImpackDecoder(comptime Reader: type) type {
             @memset(&blk_coeff, 0);
             bits = try self.readDCHuffCode();
             if (bits == 0) {
-                value = 0;
+                value = self.prev_dc;
             } else {
-                value = try self.readInt(bits);
+                value = try self.readInt(bits) + self.prev_dc;
+                self.prev_dc = value;
             }
             blk_coeff[0] = value * (quant_table[0] >> @intFromEnum(self.quality));
 
@@ -172,7 +174,14 @@ pub fn ImpackDecoder(comptime Reader: type) type {
             }
             dct.idct(&blk_coeff);
             for (0..64) |i| {
-                blk[i] = @intCast(blk_coeff[i] + 128);
+                const pixel = blk_coeff[i] + 128;
+                if (pixel < 0) {
+                    blk[i] = 0;
+                } else if (pixel > 255) {
+                    blk[i] = 255;
+                } else {
+                    blk[i] = @intCast(pixel);
+                }
             }
         }
     };
@@ -183,6 +192,7 @@ pub fn ImpackEncoder(comptime quality: Quality, comptime Writer: type) type {
         width: u16,
         height: u16,
         writer: std.io.BitWriter(.big, Writer),
+        prev_dc: i16 = 0,
         quant_table: [64]i32 = blk: {
             var tmp: [64]i32 = undefined;
             for (0..64) |i| {
@@ -210,12 +220,21 @@ pub fn ImpackEncoder(comptime quality: Quality, comptime Writer: type) type {
             self.quantBlock(&blk_coeff);
 
             // Encode DC coefficient
-            try self.writeDCHuffCode(blk_coeff[0]);
+            try self.writeDCHuffCode(blk_coeff[0] - self.prev_dc);
+            self.prev_dc = blk_coeff[0];
             var runlength: i16 = 0;
             var zero_cnt: i16 = 0;
             var value: i16 = undefined;
-            for (zig_zag_ord[1..]) |j| {
-                const coeff: i16 = blk_coeff[j];
+            var end: i16 = 63;
+            // Remove trailing zeros (important for compression ratio)
+            while (end >= 0) : (end -= 1) {
+                if (blk_coeff[zig_zag_ord[@intCast(end)]] != 0) {
+                    break;
+                }
+            }
+            var j: usize = 1;
+            while (j <= end) : (j += 1) {
+                const coeff: i16 = blk_coeff[zig_zag_ord[j]];
                 if (coeff == 0) {
                     zero_cnt += 1;
                     if (zero_cnt >= 16) {
