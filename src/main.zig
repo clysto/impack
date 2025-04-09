@@ -19,7 +19,9 @@ pub fn main() !void {
         }
         var q = impack.Quality.best;
         if (quality != null) {
-            if (std.mem.eql(u8, quality.?, "low")) {
+            if (std.mem.eql(u8, quality.?, "poor")) {
+                q = impack.Quality.poor;
+            } else if (std.mem.eql(u8, quality.?, "low")) {
                 q = impack.Quality.low;
             } else if (std.mem.eql(u8, quality.?, "medium")) {
                 q = impack.Quality.medium;
@@ -28,7 +30,7 @@ pub fn main() !void {
             } else if (std.mem.eql(u8, quality.?, "best")) {
                 q = impack.Quality.best;
             } else {
-                std.debug.print("Usage: {s} encode <width> <height> [low|medium|high|best]\n", .{cmd.?});
+                std.debug.print("Usage: {s} encode <width> <height> [poor|low|medium|high|best]\n", .{cmd.?});
                 return;
             }
         }
@@ -44,7 +46,10 @@ pub fn main() !void {
 }
 
 pub fn encode(width: usize, height: usize, quality: impack.Quality) !void {
-    const writer = std.io.getStdOut().writer();
+    const out = std.io.getStdOut();
+    var buf = std.io.bufferedWriter(out.writer());
+
+    const writer = buf.writer();
     const reader = std.io.getStdIn().reader();
     var blk: [64]u8 = undefined;
 
@@ -90,6 +95,19 @@ pub fn encode(width: usize, height: usize, quality: impack.Quality) !void {
         },
         .low => {
             var encoder = impack.ImpackEncoder(.low, @TypeOf(writer)){
+                .writer = std.io.bitWriter(.big, writer),
+                .width = @intCast(width),
+                .height = @intCast(height),
+            };
+            try encoder.encodeHeader();
+            for (0..(@divFloor(width, 8) * @divFloor(height, 8))) |_| {
+                _ = try reader.read(&blk);
+                try encoder.encodeBlock(&blk);
+            }
+            try encoder.encodeEnd();
+        },
+        .poor => {
+            var encoder = impack.ImpackEncoder(.poor, @TypeOf(writer)){
                 .writer = std.io.bitWriter(.big, writer),
                 .width = @intCast(width),
                 .height = @intCast(height),

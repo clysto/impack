@@ -50,14 +50,14 @@ const ac_huff_table_codelen = [16][11]u8{
 };
 
 const quant_table = [64]u8{
-    16, 11, 10, 16, 24,  40,  51,  61,
-    12, 12, 14, 19, 26,  58,  60,  55,
-    14, 13, 16, 24, 40,  57,  69,  56,
-    14, 17, 22, 29, 51,  87,  80,  62,
-    18, 22, 37, 56, 68,  109, 103, 77,
-    24, 35, 55, 64, 81,  104, 113, 92,
-    49, 64, 78, 87, 103, 121, 120, 101,
-    72, 92, 95, 98, 112, 100, 103, 99,
+    32,  22,  20,  32,  48,  80,  102, 122,
+    24,  24,  28,  38,  52,  116, 120, 110,
+    28,  26,  32,  48,  80,  114, 138, 112,
+    28,  34,  44,  58,  102, 174, 160, 124,
+    36,  44,  74,  112, 136, 218, 206, 154,
+    48,  70,  110, 128, 162, 208, 226, 184,
+    98,  128, 156, 174, 206, 242, 240, 202,
+    144, 184, 190, 196, 224, 200, 206, 198,
 };
 
 const zig_zag_ord = [64]u8{
@@ -72,6 +72,7 @@ const zig_zag_ord = [64]u8{
 };
 
 pub const Quality = enum {
+    poor,
     low,
     medium,
     high,
@@ -86,7 +87,7 @@ pub fn ImpackDecoder(comptime Reader: type) type {
         prev_dc: i32 = 0,
         quality: Quality = .best,
 
-        pub fn readDCHuffCode(self: *@This()) !u5 {
+        pub inline fn readDCHuffCode(self: *@This()) !u5 {
             var prefix: u32 = 0;
             var prefix_len: usize = 0;
             var n: u16 = undefined;
@@ -103,7 +104,7 @@ pub fn ImpackDecoder(comptime Reader: type) type {
             return error.InvalidHuffmanCode;
         }
 
-        pub fn readACHuffCode(self: *@This(), runlength: *usize) !u5 {
+        pub inline fn readACHuffCode(self: *@This(), runlength: *usize) !u5 {
             var prefix: u32 = 0;
             var prefix_len: usize = 0;
             var n: u16 = undefined;
@@ -123,7 +124,7 @@ pub fn ImpackDecoder(comptime Reader: type) type {
             return error.InvalidHuffmanCode;
         }
 
-        pub fn readInt(self: *@This(), bits: u5) !i32 {
+        pub inline fn readInt(self: *@This(), bits: u5) !i32 {
             var n: u16 = undefined;
             const value = try self.reader.readBits(i32, bits, &n);
             if ((value >> @intCast(bits - 1)) == 0) {
@@ -261,7 +262,7 @@ pub fn ImpackEncoder(comptime quality: Quality, comptime Writer: type) type {
             try self.writer.flushBits();
         }
 
-        pub fn quantBlock(self: *@This(), blk: *[64]i16) void {
+        pub inline fn quantBlock(self: *@This(), blk: *[64]i16) void {
             var i: usize = 0;
             while (i < 64) : (i += 1) {
                 const d: i32 = blk[i];
@@ -274,7 +275,7 @@ pub fn ImpackEncoder(comptime quality: Quality, comptime Writer: type) type {
             }
         }
 
-        pub fn writeDCHuffCode(self: *@This(), value: i16) !void {
+        pub inline fn writeDCHuffCode(self: *@This(), value: i16) !void {
             if (value < 0) {
                 const bits: u16 = @intCast(32 - std.zig.c_builtins.__builtin_clz(@intCast(-value)));
                 try self.writer.writeBits(dc_huff_table[bits], dc_huff_table_codelen[bits]);
@@ -289,7 +290,7 @@ pub fn ImpackEncoder(comptime quality: Quality, comptime Writer: type) type {
             }
         }
 
-        pub fn writeACHuffCode(self: *@This(), runlength: usize, value: i16) !void {
+        pub inline fn writeACHuffCode(self: *@This(), runlength: usize, value: i16) !void {
             if (value < 0) {
                 const bits: u16 = @intCast(32 - std.zig.c_builtins.__builtin_clz(@intCast(-value)));
                 try self.writer.writeBits(ac_huff_table[runlength][bits], ac_huff_table_codelen[runlength][bits]);
