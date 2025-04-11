@@ -19,6 +19,21 @@ const dc_huff_table = [12]u32{
 
 const dc_huff_table_codelen = [12]u8{ 2, 3, 3, 3, 3, 3, 4, 5, 6, 7, 8, 9 };
 
+const dc_huff_lut = blk: {
+    var tmp: [256]i8 = undefined;
+    for (0..256) |code| {
+        for (0.., dc_huff_table, dc_huff_table_codelen) |sym, huff_code, huff_code_len| {
+            if (huff_code_len <= 8 and @as(u8, code) >> (8 - huff_code_len) == huff_code) {
+                tmp[code] = @intCast(sym);
+                break;
+            }
+        } else {
+            tmp[code] = -1;
+        }
+    }
+    break :blk tmp;
+};
+
 const ac_huff_table = [16][11]u32{
     .{ 0x000a, 0x0000, 0x0001, 0x0004, 0x000b, 0x001a, 0x0078, 0x00f8, 0x03f6, 0xff82, 0xff83 },
     .{ 0x0000, 0x000c, 0x001b, 0x0079, 0x01f6, 0x07f6, 0xff84, 0xff85, 0xff86, 0xff87, 0xff88 },
@@ -55,6 +70,30 @@ const ac_huff_table_codelen = [16][11]u8{
     .{ 0, 11, 16, 16, 16, 16, 16, 16, 16, 16, 16 },
     .{ 0, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16 },
     .{ 11, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16 },
+};
+
+const ac_huff_lut = blk: {
+    @setEvalBranchQuota(65536);
+    var tmp: [256]struct { runlength: i8, bits: i8 } = undefined;
+    for (0..256) |code| {
+        loop: for (0..16) |rl| {
+            for (0.., ac_huff_table[rl], ac_huff_table_codelen[rl]) |bits, huff_code, huff_code_len| {
+                if (huff_code_len <= 8 and huff_code_len > 0 and @as(u8, code) >> (8 - huff_code_len) == huff_code) {
+                    tmp[code] = .{
+                        .runlength = rl,
+                        .bits = bits,
+                    };
+                    break :loop;
+                }
+            }
+        } else {
+            tmp[code] = .{
+                .runlength = -1,
+                .bits = -1,
+            };
+        }
+    }
+    break :blk tmp;
 };
 
 const quant_table = [64]u8{
@@ -95,13 +134,51 @@ pub fn ImpackDecoder(comptime Reader: type) type {
         prev_dc: i32 = 0,
         quality: Quality = .best,
 
-        pub inline fn readDCHuffCode(self: *@This()) !u5 {
-            var prefix: u32 = 0;
-            var prefix_len: usize = 0;
+        bits_peak: u8 = 0,
+        bits_peak_valid: bool = false,
+
+        inline fn peak8bits(self: *@This()) !u8 {
+            if (!self.bits_peak_valid) {
+                var n: u16 = undefined;
+                self.bits_peak = try self.reader.readBits(u8, 8, &n);
+                self.bits_peak_valid = true;
+            }
+            return self.bits_peak;
+        }
+
+        inline fn readBits(self: *@This(), comptime T: type, num: u16) !T {
             var n: u16 = undefined;
-            for (0..16) |_| {
+            if (self.bits_peak_valid) {
+                if (num < 8) {
+                    const bits = self.bits_peak >> @intCast(8 - num);
+                    self.bits_peak <<= @intCast(num);
+                    self.bits_peak |= try self.reader.readBits(u8, num, &n);
+                    return bits;
+                } else {
+                    var bits = try self.reader.readBits(T, num - 8, &n);
+                    bits |= @as(T, self.bits_peak) << @intCast(num - 8);
+                    self.bits_peak_valid = false;
+                    self.bits_peak = 0;
+                    return bits;
+                }
+            } else {
+                return try self.reader.readBits(T, num, &n);
+            }
+        }
+
+        pub inline fn readDCHuffCode(self: *@This()) !u5 {
+            const sym = dc_huff_lut[try self.peak8bits()];
+            if (sym != -1) {
+                _ = try self.readBits(u8, dc_huff_table_codelen[@intCast(sym)]);
+                return @intCast(sym);
+            }
+            // We dont find the symbol in the LUT, so we need to do
+            // slow bit by bit huffman decoding
+            var prefix: u32 = try self.readBits(u32, 8);
+            var prefix_len: usize = 8;
+            for (0..8) |_| {
                 prefix <<= 1;
-                prefix = prefix | try self.reader.readBits(u32, 1, &n);
+                prefix = prefix | try self.readBits(u32, 1);
                 prefix_len += 1;
                 for (0.., dc_huff_table, dc_huff_table_codelen) |bits, huff_code, huff_code_len| {
                     if (prefix == huff_code and prefix_len == huff_code_len) {
@@ -113,12 +190,18 @@ pub fn ImpackDecoder(comptime Reader: type) type {
         }
 
         pub inline fn readACHuffCode(self: *@This(), runlength: *usize) !u5 {
-            var prefix: u32 = 0;
-            var prefix_len: usize = 0;
-            var n: u16 = undefined;
-            for (0..16) |_| {
+            const sym = ac_huff_lut[try self.peak8bits()];
+            if (sym.runlength != -1) {
+                _ = try self.readBits(u8, ac_huff_table_codelen[@intCast(sym.runlength)][@intCast(sym.bits)]);
+                runlength.* = @intCast(sym.runlength);
+                return @intCast(sym.bits);
+            }
+
+            var prefix: u32 = try self.readBits(u32, 8);
+            var prefix_len: usize = 8;
+            for (0..8) |_| {
                 prefix <<= 1;
-                prefix = prefix | try self.reader.readBits(u32, 1, &n);
+                prefix = prefix | try self.readBits(u32, 1);
                 prefix_len += 1;
                 for (0..ac_huff_table.len) |rl| {
                     for (0.., ac_huff_table[rl], ac_huff_table_codelen[rl]) |bits, huff_code, huff_code_len| {
@@ -133,8 +216,7 @@ pub fn ImpackDecoder(comptime Reader: type) type {
         }
 
         pub inline fn readInt(self: *@This(), bits: u5) !i32 {
-            var n: u16 = undefined;
-            const value = try self.reader.readBits(i32, bits, &n);
+            const value = try self.readBits(i32, bits);
             if ((value >> (bits - 1)) == 0) {
                 return -(value ^ ((@as(i32, 1) << bits) - 1));
             }
@@ -142,10 +224,9 @@ pub fn ImpackDecoder(comptime Reader: type) type {
         }
 
         pub fn decodeHeader(self: *@This()) !void {
-            var n: u16 = undefined;
-            self.width = try self.reader.readBits(u16, 16, &n);
-            self.height = try self.reader.readBits(u16, 16, &n);
-            const quality_value = try self.reader.readBits(u32, 32, &n);
+            self.width = try self.readBits(u16, 16);
+            self.height = try self.readBits(u16, 16);
+            const quality_value = try self.readBits(u32, 32);
             if (quality_value > @intFromEnum(Quality.best)) {
                 return error.InvalidQuality;
             }
@@ -286,11 +367,11 @@ pub fn ImpackEncoder(comptime quality: Quality, comptime Writer: type) type {
 
         pub inline fn writeDCHuffCode(self: *@This(), value: i16) !void {
             if (value < 0) {
-                const bits: u16 = @intCast(32 - std.zig.c_builtins.__builtin_clz(@intCast(-value)));
+                const bits: u16 = @intCast(16 - @clz(-value));
                 try self.writer.writeBits(dc_huff_table[bits], dc_huff_table_codelen[bits]);
                 try self.writer.writeBits(~(-value), bits);
             } else {
-                const bits: u16 = @intCast(32 - std.zig.c_builtins.__builtin_clz(@intCast(value)));
+                const bits: u16 = @intCast(16 - @clz(value));
                 try self.writer.writeBits(dc_huff_table[bits], dc_huff_table_codelen[bits]);
                 if (value == 0) {
                     return;
@@ -301,11 +382,11 @@ pub fn ImpackEncoder(comptime quality: Quality, comptime Writer: type) type {
 
         pub inline fn writeACHuffCode(self: *@This(), runlength: usize, value: i16) !void {
             if (value < 0) {
-                const bits: u16 = @intCast(32 - std.zig.c_builtins.__builtin_clz(@intCast(-value)));
+                const bits: u16 = @intCast(16 - @clz(-value));
                 try self.writer.writeBits(ac_huff_table[runlength][bits], ac_huff_table_codelen[runlength][bits]);
                 try self.writer.writeBits(~(-value), bits);
             } else {
-                const bits: u16 = @intCast(32 - std.zig.c_builtins.__builtin_clz(@intCast(value)));
+                const bits: u16 = @intCast(16 - @clz(value));
                 try self.writer.writeBits(ac_huff_table[runlength][bits], ac_huff_table_codelen[runlength][bits]);
                 if (value == 0) {
                     return;
@@ -359,4 +440,8 @@ test "test" {
     };
     var test_decode: [64]u8 = undefined;
     try decoder.decodeBlock(&test_decode);
+}
+
+test "test1" {
+    std.debug.print("{any}\n", .{ac_huff_lut});
 }

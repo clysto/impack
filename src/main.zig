@@ -39,11 +39,11 @@ pub fn main() !void {
 pub fn encode(comptime quality: impack.Quality) !void {
     const out = std.io.getStdOut();
     const in = std.io.getStdIn();
-    var bufOut = std.io.bufferedWriter(out.writer());
-    var bufIn = std.io.bufferedReader(in.reader());
+    var buf_out = std.io.bufferedWriter(out.writer());
+    var buf_in = std.io.bufferedReader(in.reader());
 
-    const writer = bufOut.writer();
-    const reader = bufIn.reader();
+    const writer = buf_out.writer();
+    const reader = buf_in.reader();
     var blk: [64]u8 = undefined;
 
     var width: u16 = 0;
@@ -77,17 +77,17 @@ pub fn encode(comptime quality: impack.Quality) !void {
     }
 
     try encoder.encodeEnd();
-    try bufOut.flush();
+    try buf_out.flush();
 }
 
 fn decode() !void {
     const out = std.io.getStdOut();
     const in = std.io.getStdIn();
-    var bufOut = std.io.bufferedWriter(out.writer());
-    var bufIn = std.io.bufferedReader(in.reader());
+    var buf_out = std.io.bufferedWriter(out.writer());
+    var buf_in = std.io.bufferedReader(in.reader());
 
-    const writer = bufOut.writer();
-    const reader = bufIn.reader();
+    const writer = buf_out.writer();
+    const reader = buf_in.reader();
 
     var blk: [64]u8 = undefined;
 
@@ -119,5 +119,5 @@ fn decode() !void {
     }
 
     try pgm.writePGM(writer, true, decoder.width, decoder.height, img);
-    try bufOut.flush();
+    try buf_out.flush();
 }
