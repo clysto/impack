@@ -1,5 +1,6 @@
 const std = @import("std");
 const impack = @import("impack");
+const pgm = @import("pgm.zig");
 
 pub fn main() !void {
     var args = std.process.args();
@@ -10,30 +11,21 @@ pub fn main() !void {
         return;
     }
     if (std.mem.eql(u8, subcmd.?, "encode")) {
-        const width = args.next();
-        const height = args.next();
-        var quality = args.next();
-        if (width == null or height == null) {
-            std.debug.print("Usage: {s} encode <width> <height>\n", .{cmd.?});
-            return;
-        }
-        const w = try std.fmt.parseInt(usize, width.?, 10);
-        const h = try std.fmt.parseInt(usize, height.?, 10);
+        const quality = args.next();
         if (quality == null) {
-            quality.? = "best";
-        }
-        if (std.mem.eql(u8, quality.?, "poor")) {
-            return encode(w, h, .poor);
+            return encode(.best);
+        } else if (std.mem.eql(u8, quality.?, "poor")) {
+            return encode(.poor);
         } else if (std.mem.eql(u8, quality.?, "low")) {
-            return encode(w, h, .low);
+            return encode(.low);
         } else if (std.mem.eql(u8, quality.?, "medium")) {
-            return encode(w, h, .medium);
+            return encode(.medium);
         } else if (std.mem.eql(u8, quality.?, "high")) {
-            return encode(w, h, .high);
+            return encode(.high);
         } else if (std.mem.eql(u8, quality.?, "best")) {
-            return encode(w, h, .best);
+            return encode(.best);
         } else {
-            std.debug.print("Usage: {s} encode <width> <height> [poor|low|medium|high|best]\n", .{cmd.?});
+            std.debug.print("Usage: {s} encode [poor|low|medium|high|best]\n", .{cmd.?});
             return;
         }
     } else if (std.mem.eql(u8, subcmd.?, "decode")) {
@@ -44,7 +36,7 @@ pub fn main() !void {
     }
 }
 
-pub fn encode(width: usize, height: usize, comptime quality: impack.Quality) !void {
+pub fn encode(comptime quality: impack.Quality) !void {
     const out = std.io.getStdOut();
     const in = std.io.getStdIn();
     var bufOut = std.io.bufferedWriter(out.writer());
@@ -54,16 +46,36 @@ pub fn encode(width: usize, height: usize, comptime quality: impack.Quality) !vo
     const reader = bufIn.reader();
     var blk: [64]u8 = undefined;
 
+    var width: u16 = 0;
+    var height: u16 = 0;
+    var maxval: u16 = 0;
+    var allocator = std.heap.page_allocator;
+    const img = try pgm.readPGM(&allocator, reader, &width, &height, &maxval);
+    defer allocator.free(img);
+
     var encoder = impack.ImpackEncoder(quality, @TypeOf(writer)){
         .writer = std.io.bitWriter(.big, writer),
         .width = @intCast(width),
         .height = @intCast(height),
     };
     try encoder.encodeHeader();
-    for (0..(@divFloor(width, 8) * @divFloor(height, 8))) |_| {
-        _ = try reader.read(&blk);
-        try encoder.encodeBlock(&blk);
+
+    var row: usize = 0;
+    while (row < height) {
+        var col: usize = 0;
+        while (col < width) {
+            @memset(&blk, 0);
+            for (row..@min(row + 8, height)) |i| {
+                for (col..@min(col + 8, width)) |j| {
+                    blk[(i - row) * 8 + (j - col)] = img[i * width + j];
+                }
+            }
+            try encoder.encodeBlock(&blk);
+            col += 8;
+        }
+        row += 8;
     }
+
     try encoder.encodeEnd();
     try bufOut.flush();
 }
@@ -84,10 +96,28 @@ fn decode() !void {
     };
 
     try decoder.decodeHeader();
-    for (0..(@divFloor(decoder.width, 8) * @divFloor(decoder.height, 8))) |_| {
-        try decoder.decodeBlock(&blk);
-        _ = try writer.write(&blk);
+
+    var allocator = std.heap.page_allocator;
+    var img = try allocator.alloc(u8, @as(usize, decoder.width) * decoder.height);
+    defer allocator.free(img);
+
+    var row: usize = 0;
+    while (row < decoder.height) {
+        var col: usize = 0;
+        while (col < decoder.width) {
+            try decoder.decodeBlock(&blk);
+            for (0..8) |i| {
+                for (0..8) |j| {
+                    if (row + i < decoder.height and col + j < decoder.width) {
+                        img[(row + i) * decoder.width + (col + j)] = blk[i * 8 + j];
+                    }
+                }
+            }
+            col += 8;
+        }
+        row += 8;
     }
 
+    try pgm.writePGM(writer, true, decoder.width, decoder.height, img);
     try bufOut.flush();
 }
