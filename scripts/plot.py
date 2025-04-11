@@ -18,5 +18,9 @@ if __name__ == "__main__":
     plt.show(block=False)
 
     plt.figure()
+    sns.barplot(data=results, x="QUALITY", y="DECODE_TIME")
+    plt.show(block=False)
+
+    plt.figure()
     sns.barplot(data=results[results["QUALITY"] == "poor"], x="ID", y="CR")
     plt.show()

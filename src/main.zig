@@ -1,5 +1,5 @@
 const std = @import("std");
-const impack = @import("root.zig");
+const impack = @import("impack");
 
 pub fn main() !void {
     var args = std.process.args();
@@ -12,31 +12,30 @@ pub fn main() !void {
     if (std.mem.eql(u8, subcmd.?, "encode")) {
         const width = args.next();
         const height = args.next();
-        const quality = args.next();
+        var quality = args.next();
         if (width == null or height == null) {
             std.debug.print("Usage: {s} encode <width> <height>\n", .{cmd.?});
             return;
         }
-        var q = impack.Quality.best;
-        if (quality != null) {
-            if (std.mem.eql(u8, quality.?, "poor")) {
-                q = impack.Quality.poor;
-            } else if (std.mem.eql(u8, quality.?, "low")) {
-                q = impack.Quality.low;
-            } else if (std.mem.eql(u8, quality.?, "medium")) {
-                q = impack.Quality.medium;
-            } else if (std.mem.eql(u8, quality.?, "high")) {
-                q = impack.Quality.high;
-            } else if (std.mem.eql(u8, quality.?, "best")) {
-                q = impack.Quality.best;
-            } else {
-                std.debug.print("Usage: {s} encode <width> <height> [poor|low|medium|high|best]\n", .{cmd.?});
-                return;
-            }
-        }
         const w = try std.fmt.parseInt(usize, width.?, 10);
         const h = try std.fmt.parseInt(usize, height.?, 10);
-        return encode(w, h, q);
+        if (quality == null) {
+            quality.? = "best";
+        }
+        if (std.mem.eql(u8, quality.?, "poor")) {
+            return encode(w, h, .poor);
+        } else if (std.mem.eql(u8, quality.?, "low")) {
+            return encode(w, h, .low);
+        } else if (std.mem.eql(u8, quality.?, "medium")) {
+            return encode(w, h, .medium);
+        } else if (std.mem.eql(u8, quality.?, "high")) {
+            return encode(w, h, .high);
+        } else if (std.mem.eql(u8, quality.?, "best")) {
+            return encode(w, h, .best);
+        } else {
+            std.debug.print("Usage: {s} encode <width> <height> [poor|low|medium|high|best]\n", .{cmd.?});
+            return;
+        }
     } else if (std.mem.eql(u8, subcmd.?, "decode")) {
         return decode();
     } else {
@@ -45,86 +44,39 @@ pub fn main() !void {
     }
 }
 
-pub fn encode(width: usize, height: usize, quality: impack.Quality) !void {
+pub fn encode(width: usize, height: usize, comptime quality: impack.Quality) !void {
     const out = std.io.getStdOut();
-    var buf = std.io.bufferedWriter(out.writer());
+    const in = std.io.getStdIn();
+    var bufOut = std.io.bufferedWriter(out.writer());
+    var bufIn = std.io.bufferedReader(in.reader());
 
-    const writer = buf.writer();
-    const reader = std.io.getStdIn().reader();
+    const writer = bufOut.writer();
+    const reader = bufIn.reader();
     var blk: [64]u8 = undefined;
 
-    switch (quality) {
-        .best => {
-            var encoder = impack.ImpackEncoder(.best, @TypeOf(writer)){
-                .writer = std.io.bitWriter(.big, writer),
-                .width = @intCast(width),
-                .height = @intCast(height),
-            };
-            try encoder.encodeHeader();
-            for (0..(@divFloor(width, 8) * @divFloor(height, 8))) |_| {
-                _ = try reader.read(&blk);
-                try encoder.encodeBlock(&blk);
-            }
-            try encoder.encodeEnd();
-        },
-        .high => {
-            var encoder = impack.ImpackEncoder(.high, @TypeOf(writer)){
-                .writer = std.io.bitWriter(.big, writer),
-                .width = @intCast(width),
-                .height = @intCast(height),
-            };
-            try encoder.encodeHeader();
-            for (0..(@divFloor(width, 8) * @divFloor(height, 8))) |_| {
-                _ = try reader.read(&blk);
-                try encoder.encodeBlock(&blk);
-            }
-            try encoder.encodeEnd();
-        },
-        .medium => {
-            var encoder = impack.ImpackEncoder(.medium, @TypeOf(writer)){
-                .writer = std.io.bitWriter(.big, writer),
-                .width = @intCast(width),
-                .height = @intCast(height),
-            };
-            try encoder.encodeHeader();
-            for (0..(@divFloor(width, 8) * @divFloor(height, 8))) |_| {
-                _ = try reader.read(&blk);
-                try encoder.encodeBlock(&blk);
-            }
-            try encoder.encodeEnd();
-        },
-        .low => {
-            var encoder = impack.ImpackEncoder(.low, @TypeOf(writer)){
-                .writer = std.io.bitWriter(.big, writer),
-                .width = @intCast(width),
-                .height = @intCast(height),
-            };
-            try encoder.encodeHeader();
-            for (0..(@divFloor(width, 8) * @divFloor(height, 8))) |_| {
-                _ = try reader.read(&blk);
-                try encoder.encodeBlock(&blk);
-            }
-            try encoder.encodeEnd();
-        },
-        .poor => {
-            var encoder = impack.ImpackEncoder(.poor, @TypeOf(writer)){
-                .writer = std.io.bitWriter(.big, writer),
-                .width = @intCast(width),
-                .height = @intCast(height),
-            };
-            try encoder.encodeHeader();
-            for (0..(@divFloor(width, 8) * @divFloor(height, 8))) |_| {
-                _ = try reader.read(&blk);
-                try encoder.encodeBlock(&blk);
-            }
-            try encoder.encodeEnd();
-        },
+    var encoder = impack.ImpackEncoder(quality, @TypeOf(writer)){
+        .writer = std.io.bitWriter(.big, writer),
+        .width = @intCast(width),
+        .height = @intCast(height),
+    };
+    try encoder.encodeHeader();
+    for (0..(@divFloor(width, 8) * @divFloor(height, 8))) |_| {
+        _ = try reader.read(&blk);
+        try encoder.encodeBlock(&blk);
     }
+    try encoder.encodeEnd();
+    try bufOut.flush();
 }
 
 fn decode() !void {
-    const writer = std.io.getStdOut().writer();
-    const reader = std.io.getStdIn().reader();
+    const out = std.io.getStdOut();
+    const in = std.io.getStdIn();
+    var bufOut = std.io.bufferedWriter(out.writer());
+    var bufIn = std.io.bufferedReader(in.reader());
+
+    const writer = bufOut.writer();
+    const reader = bufIn.reader();
+
     var blk: [64]u8 = undefined;
 
     var decoder = impack.ImpackDecoder(@TypeOf(reader)){
@@ -136,4 +88,6 @@ fn decode() !void {
         try decoder.decodeBlock(&blk);
         _ = try writer.write(&blk);
     }
+
+    try bufOut.flush();
 }

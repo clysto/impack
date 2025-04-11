@@ -39,14 +39,22 @@ const ac_huff_table = [16][11]u32{
 };
 
 const ac_huff_table_codelen = [16][11]u8{
-    .{ 4, 2, 2, 3, 4, 5, 7, 8, 10, 16, 16 },        .{ 0, 4, 5, 7, 9, 11, 16, 16, 16, 16, 16 },
-    .{ 0, 5, 8, 10, 12, 16, 16, 16, 16, 16, 16 },   .{ 0, 6, 9, 12, 16, 16, 16, 16, 16, 16, 16 },
-    .{ 0, 6, 10, 16, 16, 16, 16, 16, 16, 16, 16 },  .{ 0, 7, 11, 16, 16, 16, 16, 16, 16, 16, 16 },
-    .{ 0, 7, 12, 16, 16, 16, 16, 16, 16, 16, 16 },  .{ 0, 8, 12, 16, 16, 16, 16, 16, 16, 16, 16 },
-    .{ 0, 9, 15, 16, 16, 16, 16, 16, 16, 16, 16 },  .{ 0, 9, 16, 16, 16, 16, 16, 16, 16, 16, 16 },
-    .{ 0, 9, 16, 16, 16, 16, 16, 16, 16, 16, 16 },  .{ 0, 10, 16, 16, 16, 16, 16, 16, 16, 16, 16 },
-    .{ 0, 10, 16, 16, 16, 16, 16, 16, 16, 16, 16 }, .{ 0, 11, 16, 16, 16, 16, 16, 16, 16, 16, 16 },
-    .{ 0, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16 }, .{ 11, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16 },
+    .{ 4, 2, 2, 3, 4, 5, 7, 8, 10, 16, 16 },
+    .{ 0, 4, 5, 7, 9, 11, 16, 16, 16, 16, 16 },
+    .{ 0, 5, 8, 10, 12, 16, 16, 16, 16, 16, 16 },
+    .{ 0, 6, 9, 12, 16, 16, 16, 16, 16, 16, 16 },
+    .{ 0, 6, 10, 16, 16, 16, 16, 16, 16, 16, 16 },
+    .{ 0, 7, 11, 16, 16, 16, 16, 16, 16, 16, 16 },
+    .{ 0, 7, 12, 16, 16, 16, 16, 16, 16, 16, 16 },
+    .{ 0, 8, 12, 16, 16, 16, 16, 16, 16, 16, 16 },
+    .{ 0, 9, 15, 16, 16, 16, 16, 16, 16, 16, 16 },
+    .{ 0, 9, 16, 16, 16, 16, 16, 16, 16, 16, 16 },
+    .{ 0, 9, 16, 16, 16, 16, 16, 16, 16, 16, 16 },
+    .{ 0, 10, 16, 16, 16, 16, 16, 16, 16, 16, 16 },
+    .{ 0, 10, 16, 16, 16, 16, 16, 16, 16, 16, 16 },
+    .{ 0, 11, 16, 16, 16, 16, 16, 16, 16, 16, 16 },
+    .{ 0, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16 },
+    .{ 11, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16 },
 };
 
 const quant_table = [64]u8{
@@ -127,7 +135,7 @@ pub fn ImpackDecoder(comptime Reader: type) type {
         pub inline fn readInt(self: *@This(), bits: u5) !i32 {
             var n: u16 = undefined;
             const value = try self.reader.readBits(i32, bits, &n);
-            if ((value >> @intCast(bits - 1)) == 0) {
+            if ((value >> (bits - 1)) == 0) {
                 return -(value ^ ((@as(i32, 1) << bits) - 1));
             }
             return value;
@@ -144,7 +152,7 @@ pub fn ImpackDecoder(comptime Reader: type) type {
             self.quality = @enumFromInt(quality_value);
         }
 
-        pub fn decodeBlock(self: *@This(), blk: *[64]u8) !void {
+        pub fn decodeBlock(self: *@This(), blk: []u8) !void {
             var bits: u5 = undefined;
             var runlength: usize = undefined;
             var value: i32 = undefined;
@@ -210,7 +218,7 @@ pub fn ImpackEncoder(comptime quality: Quality, comptime Writer: type) type {
             try self.writer.writeBits(@as(u32, @intFromEnum(quality)), 32);
         }
 
-        pub fn encodeBlock(self: *@This(), blk: *const [64]u8) !void {
+        pub fn encodeBlock(self: *@This(), blk: []const u8) !void {
             var blk_offset: [64]i8 = undefined;
             var blk_coeff: [64]i16 = undefined;
             var i: usize = 0;
@@ -240,6 +248,7 @@ pub fn ImpackEncoder(comptime quality: Quality, comptime Writer: type) type {
                     zero_cnt += 1;
                     if (zero_cnt >= 16) {
                         runlength = 15;
+                        // Write ZRL (Zero Run Length)
                         value = 0;
                         zero_cnt = 0;
                     }

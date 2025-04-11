@@ -14,6 +14,7 @@ const w3mw5: i32 = w3 - w5;
 
 const r2: i32 = 181; // 256/sqrt(2)
 
+/// This implementation is based on Arai, Agui, and Nakajima's algorithm for scaled DCT.
 pub fn fdct(src: [*]const i8, dst: [*]i16) void {
     var tmp0: i32 = undefined;
     var tmp1: i32 = undefined;

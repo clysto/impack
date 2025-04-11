@@ -3,3 +3,4 @@
 .zig-cache
 /zig-out
 __pycache__
+.vscode

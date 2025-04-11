@@ -16,7 +16,7 @@ def psnr(im1, im2):
 if __name__ == "__main__":
     print("ID,QUALITY,PSNR,CR,ENCODE_TIME,DECODE_TIME")
     for quality in ["poor", "low", "medium", "high", "best"]:
-        for i in range(1, 5):
+        for i in range(1, 40):
             im = Image.open(Path(__file__).parent / "images" / f"{i}.gif")
             im = im.convert("L")
             im = np.array(im)
