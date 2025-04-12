@@ -72,6 +72,45 @@ const ac_huff_table_codelen = [16][11]u8{
     .{ 11, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16 },
 };
 
+const ac_huff_symbols = [_]struct { u8, u8 }{
+    .{ 1, 0 },   .{ 2, 0 },   .{ 3, 0 },  .{ 4, 0 },   .{ 5, 0 },  .{ 6, 0 },   .{ 7, 0 },  .{ 8, 0 },   .{ 9, 0 },  .{ 10, 0 }, .{ 11, 0 },
+    .{ 12, 0 },  .{ 13, 0 },  .{ 14, 0 }, .{ 0, 1 },   .{ 0, 2 },  .{ 0, 3 },   .{ 0, 0 },  .{ 0, 4 },   .{ 1, 1 },  .{ 0, 5 },  .{ 1, 2 },
+    .{ 2, 1 },   .{ 3, 1 },   .{ 4, 1 },  .{ 0, 6 },   .{ 1, 3 },  .{ 5, 1 },   .{ 6, 1 },  .{ 0, 7 },   .{ 2, 2 },  .{ 7, 1 },  .{ 1, 4 },
+    .{ 3, 2 },   .{ 8, 1 },   .{ 9, 1 },  .{ 10, 1 },  .{ 0, 8 },  .{ 2, 3 },   .{ 4, 2 },  .{ 11, 1 },  .{ 12, 1 }, .{ 1, 5 },  .{ 5, 2 },
+    .{ 13, 1 },  .{ 15, 0 },  .{ 2, 4 },  .{ 3, 3 },   .{ 6, 2 },  .{ 7, 2 },   .{ 8, 2 },  .{ 0, 9 },   .{ 0, 10 }, .{ 1, 6 },  .{ 1, 7 },
+    .{ 1, 8 },   .{ 1, 9 },   .{ 1, 10 }, .{ 2, 5 },   .{ 2, 6 },  .{ 2, 7 },   .{ 2, 8 },  .{ 2, 9 },   .{ 2, 10 }, .{ 3, 4 },  .{ 3, 5 },
+    .{ 3, 6 },   .{ 3, 7 },   .{ 3, 8 },  .{ 3, 9 },   .{ 3, 10 }, .{ 4, 3 },   .{ 4, 4 },  .{ 4, 5 },   .{ 4, 6 },  .{ 4, 7 },  .{ 4, 8 },
+    .{ 4, 9 },   .{ 4, 10 },  .{ 5, 3 },  .{ 5, 4 },   .{ 5, 5 },  .{ 5, 6 },   .{ 5, 7 },  .{ 5, 8 },   .{ 5, 9 },  .{ 5, 10 }, .{ 6, 3 },
+    .{ 6, 4 },   .{ 6, 5 },   .{ 6, 6 },  .{ 6, 7 },   .{ 6, 8 },  .{ 6, 9 },   .{ 6, 10 }, .{ 7, 3 },   .{ 7, 4 },  .{ 7, 5 },  .{ 7, 6 },
+    .{ 7, 7 },   .{ 7, 8 },   .{ 7, 9 },  .{ 7, 10 },  .{ 8, 3 },  .{ 8, 4 },   .{ 8, 5 },  .{ 8, 6 },   .{ 8, 7 },  .{ 8, 8 },  .{ 8, 9 },
+    .{ 8, 10 },  .{ 9, 2 },   .{ 9, 3 },  .{ 9, 4 },   .{ 9, 5 },  .{ 9, 6 },   .{ 9, 7 },  .{ 9, 8 },   .{ 9, 9 },  .{ 9, 10 }, .{ 10, 2 },
+    .{ 10, 3 },  .{ 10, 4 },  .{ 10, 5 }, .{ 10, 6 },  .{ 10, 7 }, .{ 10, 8 },  .{ 10, 9 }, .{ 10, 10 }, .{ 11, 2 }, .{ 11, 3 }, .{ 11, 4 },
+    .{ 11, 5 },  .{ 11, 6 },  .{ 11, 7 }, .{ 11, 8 },  .{ 11, 9 }, .{ 11, 10 }, .{ 12, 2 }, .{ 12, 3 },  .{ 12, 4 }, .{ 12, 5 }, .{ 12, 6 },
+    .{ 12, 7 },  .{ 12, 8 },  .{ 12, 9 }, .{ 12, 10 }, .{ 13, 2 }, .{ 13, 3 },  .{ 13, 4 }, .{ 13, 5 },  .{ 13, 6 }, .{ 13, 7 }, .{ 13, 8 },
+    .{ 13, 9 },  .{ 13, 10 }, .{ 14, 1 }, .{ 14, 2 },  .{ 14, 3 }, .{ 14, 4 },  .{ 14, 5 }, .{ 14, 6 },  .{ 14, 7 }, .{ 14, 8 }, .{ 14, 9 },
+    .{ 14, 10 }, .{ 15, 1 },  .{ 15, 2 }, .{ 15, 3 },  .{ 15, 4 }, .{ 15, 5 },  .{ 15, 6 }, .{ 15, 7 },  .{ 15, 8 }, .{ 15, 9 }, .{ 15, 10 },
+};
+
+const ac_huff_length_index = [_]struct { u32, u8, u8 }{
+    .{ 0x0000, 0, 14 },
+    .{ 0x0000, 0, 0 },
+    .{ 0x0000, 14, 16 },
+    .{ 0x0004, 16, 17 },
+    .{ 0x000a, 17, 20 },
+    .{ 0x001a, 20, 23 },
+    .{ 0x003a, 23, 25 },
+    .{ 0x0078, 25, 29 },
+    .{ 0x00f8, 29, 32 },
+    .{ 0x01f6, 32, 37 },
+    .{ 0x03f6, 37, 42 },
+    .{ 0x07f6, 42, 46 },
+    .{ 0x0ff4, 46, 50 },
+    .{ 0x0000, 0, 0 },
+    .{ 0x0000, 0, 0 },
+    .{ 0x7fc0, 50, 51 },
+    .{ 0xff82, 51, 176 },
+};
+
 const ac_huff_lut = blk: {
     @setEvalBranchQuota(65536);
     var tmp: [256]struct { runlength: i8, bits: i8 } = undefined;
@@ -190,6 +229,25 @@ pub fn ImpackDecoder(comptime Reader: type) type {
         }
 
         pub inline fn readACHuffCode(self: *@This(), runlength: *usize) !u5 {
+            // Fallback logic for AC Huffman code decoding when 8-bit LUT misses.
+            //
+            // This part uses a canonical Huffman decoding strategy, leveraging
+            // the fact that codes are assigned in increasing order.
+            //
+            // 1. Read the first 8 bits from the bitstream as the initial prefix.
+            // 2. Then bit-by-bit, append more bits up to 16 bits total (max Huffman length).
+            // 3. For each prefix length, we look up the corresponding `ac_huff_length_index` entry:
+            //      - `length_info[0]`: base Huffman code for that length
+            //      - `length_info[1]..length_info[2]`: index range into the flattened `ac_huff_symbols` table
+            // 4. We calculate `index = prefix - base_code`.
+            // 5. If the index is within bounds, we found the symbol!
+            // 6. Return the symbol's runlength and number of bits.
+            //
+            // This works because canonical Huffman codes guarantee:
+            //   - Codes of the same length are assigned sequentially
+            //   - Symbol order aligns with the sorted-by-length table
+            //
+            // If we try all lengths up to 16 and still fail, it's an invalid Huffman code.
             const sym = ac_huff_lut[try self.peak8bits()];
             if (sym.runlength != -1) {
                 _ = try self.readBits(u8, ac_huff_table_codelen[@intCast(sym.runlength)][@intCast(sym.bits)]);
@@ -203,14 +261,14 @@ pub fn ImpackDecoder(comptime Reader: type) type {
                 prefix <<= 1;
                 prefix = prefix | try self.readBits(u32, 1);
                 prefix_len += 1;
-                for (0..ac_huff_table.len) |rl| {
-                    for (0.., ac_huff_table[rl], ac_huff_table_codelen[rl]) |bits, huff_code, huff_code_len| {
-                        if (prefix == huff_code and prefix_len == huff_code_len) {
-                            runlength.* = rl;
-                            return @intCast(bits);
-                        }
-                    }
-                }
+                const length_info = ac_huff_length_index[prefix_len];
+                if (prefix < length_info[0]) continue;
+                const symbol_tbl = ac_huff_symbols[length_info[1]..length_info[2]];
+                const index = prefix - length_info[0];
+                if (index >= symbol_tbl.len) continue;
+                const symbol = symbol_tbl[index];
+                runlength.* = symbol[0];
+                return @intCast(symbol[1]);
             }
             return error.InvalidHuffmanCode;
         }
@@ -443,5 +501,5 @@ test "test" {
 }
 
 test "test1" {
-    std.debug.print("{any}\n", .{ac_huff_lut});
+    std.debug.print("{any}\n", .{ac_huff_length_index});
 }
