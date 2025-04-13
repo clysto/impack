@@ -180,6 +180,9 @@ pub fn ImpackDecoder(comptime Reader: type) type {
             if (!self.bits_peak_valid) {
                 var n: u16 = undefined;
                 self.bits_peak = try self.reader.readBits(u8, 8, &n);
+                if (n < 8) {
+                    self.bits_peak <<= @intCast(8 - n);
+                }
                 self.bits_peak_valid = true;
             }
             return self.bits_peak;
@@ -191,7 +194,11 @@ pub fn ImpackDecoder(comptime Reader: type) type {
                 if (num < 8) {
                     const bits = self.bits_peak >> @intCast(8 - num);
                     self.bits_peak <<= @intCast(num);
-                    self.bits_peak |= try self.reader.readBits(u8, num, &n);
+                    var bits_fill = try self.reader.readBits(u8, num, &n);
+                    if (n < num) {
+                        bits_fill <<= @intCast(num - n);
+                    }
+                    self.bits_peak |= bits_fill;
                     return bits;
                 } else {
                     var bits = try self.reader.readBits(T, num - 8, &n);
@@ -501,5 +508,7 @@ test "test" {
 }
 
 test "test1" {
-    std.debug.print("{any}\n", .{ac_huff_length_index});
+    for (ac_huff_lut) |sym| {
+        std.debug.print("{}\n", .{sym.runlength});
+    }
 }

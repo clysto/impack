@@ -4,19 +4,18 @@ import argparse
 from PIL import Image
 
 
-def save_pgm(image: Image.Image, path: str, raw: bool):
+def save_pgm(image: Image.Image, fp, raw: bool):
     width, height = image.size
     pixels = image.convert("L").tobytes()
-    with open(path, "wb") as f:
-        if raw:
-            f.write(f"P5\n{width} {height}\n255\n".encode("ascii"))
-            f.write(pixels)
-        else:
-            f.write(f"P2\n{width} {height}\n255\n".encode("ascii"))
-            for i, val in enumerate(pixels):
-                f.write(f"{val} ".encode("ascii"))
-                if (i + 1) % width == 0:
-                    f.write(b"\n")
+    if raw:
+        fp.write(f"P5\n{width} {height}\n255\n".encode("ascii"))
+        fp.write(pixels)
+    else:
+        fp.write(f"P2\n{width} {height}\n255\n".encode("ascii"))
+        for i, val in enumerate(pixels):
+            fp.write(f"{val} ".encode("ascii"))
+            if (i + 1) % width == 0:
+                fp.write(b"\n")
 
 
 if __name__ == "__main__":
@@ -27,4 +26,5 @@ if __name__ == "__main__":
     args = arg.parse_args()
 
     image = Image.open(args.input)
-    save_pgm(image, args.output, args.raw)
+    with open(args.output, "wb") as f:
+        save_pgm(image, f, args.raw)
